@@ -14,25 +14,25 @@
         #plotCanvas { background-color: #fff; border: 1px solid #ccc; max-width: 400px; margin: 0 auto; }
         .instruction { font-size: 0.9em; color: #333; margin-bottom: 8px; text-align: left; font-weight: bold; }
         .file-input { margin-bottom: 5px; width: 100%; }
-        .exif-info { font-size: 0.8em; color: #007BFF; text-align: left; margin-bottom: 10px; min-height: 1.2em; }
+        .exif-info { font-size: 0.8em; color: #007BFF; text-align: left; margin-bottom: 10px; min-height: 1.2em; font-weight: bold; }
         button { padding: 12px 24px; font-size: 16px; margin-top: 15px; border-radius: 8px; border: none; background-color: #007BFF; color: white; width: 100%; max-width: 400px; }
     </style>
 </head>
 <body>
 
-    <h3 style="margin-top: 0;">立木位置 v1.1</h3>
+    <h3 style="margin-top: 0;">立木位置 v1.2</h3>
     
     <div class="container">
         <div class="canvas-wrapper">
             <div class="instruction">① 1枚目：写真を撮影・選択して立木をタップ</div>
-            <input type="file" id="leftImageInput" class="file-input" accept="image/*">
-            <div id="exifDisplay" class="exif-info">焦点距離: 未取得 (デフォルト24mmを使用)</div>
+            <input type="file" id="leftImageInput" class="file-input" accept="image/*" capture="environment">
+            <div id="exifDisplay" class="exif-info">焦点距離: 未取得 (デフォルト24mmで計算)</div>
             <canvas id="leftCanvas" width="800" height="600"></canvas>
         </div>
 
         <div class="canvas-wrapper">
             <div class="instruction">② 2枚目：写真を撮影・選択して同じ立木をタップ</div>
-            <input type="file" id="rightImageInput" class="file-input" accept="image/*">
+            <input type="file" id="rightImageInput" class="file-input" accept="image/*" capture="environment">
             <canvas id="rightCanvas" width="800" height="600"></canvas>
         </div>
 
@@ -45,19 +45,15 @@
     <button onclick="resetApp()">すべてリセット</button>
 
     <script>
-        // 設定値（変数値は let に変更し、EXIFから上書きできるようにする）
-        const BASE_LENGTH = 2.0; // 基線長（2mポール）
-        let FOCAL_LENGTH_35MM = 24.0; // 35mm換算焦点距離（初期値）
+        const BASE_LENGTH = 2.0; 
+        let FOCAL_LENGTH_35MM = 24.0; 
 
-        // 色分け用カラーパレット
         const COLORS = ['#FF0000', '#00FFFF', '#FF00FF', '#FFFF00', '#00FF00', '#FFA500', '#0000FF', '#8A2BE2', '#FF1493', '#00FA9A'];
 
-        // 状態管理
         let trees = []; 
         let currentLeftClick = null; 
         let plotCenterPx = null; 
 
-        // 要素の取得
         const leftCanvas = document.getElementById('leftCanvas');
         const rightCanvas = document.getElementById('rightCanvas');
         const plotCanvas = document.getElementById('plotCanvas');
@@ -69,39 +65,44 @@
         const rightImageInput = document.getElementById('rightImageInput');
         const exifDisplay = document.getElementById('exifDisplay');
 
-        // 画像オブジェクト
         const imgLeft = new Image();
         const imgRight = new Image();
 
-        // 描画トリガー
         imgLeft.onload = renderLeft;
         imgRight.onload = renderRight;
 
-        // ★EXIF自動取得＆画像読み込み（1枚目）
+        // ★EXIF取得処理の改善
         leftImageInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
-                // EXIFの解析処理
                 try {
-                    // exifrを使って FocalLengthIn35mmFormat を抽出
-                    const exifData = await exifr.parse(file, ['FocalLengthIn35mmFormat']);
-                    if (exifData && exifData.FocalLengthIn35mmFormat) {
-                        FOCAL_LENGTH_35MM = exifData.FocalLengthIn35mmFormat;
-                        exifDisplay.innerText = `焦点距離: ${FOCAL_LENGTH_35MM}mm (写真データから自動取得)`;
-                        exifDisplay.style.color = '#28a745'; // 成功時は緑色
+                    // 全てのタグを一度読み込んでみる
+                    const exifData = await exifr.parse(file);
+                    
+                    if (exifData) {
+                        // 一般的なタグ名を複数チェック
+                        const focal35 = exifData.FocalLengthIn35mmFilm || exifData.FocalLengthIn35mmFormat;
+                        
+                        if (focal35) {
+                            FOCAL_LENGTH_35MM = focal35;
+                            exifDisplay.innerText = `焦点距離: ${FOCAL_LENGTH_35MM}mm (写真から自動取得)`;
+                            exifDisplay.style.color = '#28a745'; // 緑
+                        } else {
+                            FOCAL_LENGTH_35MM = 24.0;
+                            exifDisplay.innerText = `OSによりEXIFが削除されました (標準の24mmで計算)`;
+                            exifDisplay.style.color = '#ff9800'; // オレンジ
+                        }
                     } else {
-                        FOCAL_LENGTH_35MM = 24.0; // 取得できない場合はデフォルトに戻す
-                        exifDisplay.innerText = `焦点距離データなし (デフォルト ${FOCAL_LENGTH_35MM}mm を使用)`;
-                        exifDisplay.style.color = '#dc3545'; // エラー時は赤色
+                        FOCAL_LENGTH_35MM = 24.0;
+                        exifDisplay.innerText = `EXIF情報なし (標準の24mmで計算)`;
+                        exifDisplay.style.color = '#ff9800'; // オレンジ
                     }
                 } catch (error) {
-                    console.error("EXIF解析エラー:", error);
                     FOCAL_LENGTH_35MM = 24.0;
-                    exifDisplay.innerText = `EXIF読み取り失敗 (デフォルト ${FOCAL_LENGTH_35MM}mm を使用)`;
-                    exifDisplay.style.color = '#dc3545';
+                    exifDisplay.innerText = `EXIF読み取りエラー (標準の24mmで計算)`;
+                    exifDisplay.style.color = '#dc3545'; // 赤
                 }
 
-                // 画像をキャンバスへ描画する処理
                 const reader = new FileReader();
                 reader.onload = (event) => {
                     imgLeft.src = event.target.result;
@@ -110,7 +111,6 @@
             }
         });
 
-        // 画像読み込み（2枚目）
         rightImageInput.addEventListener('change', (e) => {
             const file = e.target.files[0];
             if (file) {
@@ -122,7 +122,6 @@
             }
         });
 
-        // 描画関数
         function renderLeft() {
             ctxLeft.clearRect(0, 0, leftCanvas.width, leftCanvas.height);
             if (imgLeft.src) {
@@ -160,7 +159,6 @@
             }
         }
 
-        // クリック座標をキャンバス内部解像度に変換
         function getClickPos(canvas, evt) {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
@@ -171,7 +169,6 @@
             };
         }
 
-        // キャンバスタップのイベントリスナー
         leftCanvas.addEventListener('click', (e) => {
             if (!imgLeft.src) {
                 alert("先に1枚目の写真を選択または撮影してください。");
@@ -217,7 +214,6 @@
             }
         });
 
-        // 平面図のタップイベント（ピクセル座標で保存）
         plotCanvas.addEventListener('click', (e) => {
             if (plotCenterPx) {
                 plotCenterPx = null;
@@ -228,10 +224,8 @@
             drawPlot(); 
         });
 
-        // 三角測量計算
         function calculatePosition(x_left, x_right, canvasWidth, canvasHeight) {
             const sensorWidth = (canvasWidth > canvasHeight) ? 36.0 : 24.0;
-            // EXIFから取得した FOCAL_LENGTH_35MM を使って計算
             const f_px = (canvasWidth * FOCAL_LENGTH_35MM) / sensorWidth;
 
             const cx = canvasWidth / 2.0;
@@ -251,7 +245,6 @@
             return { X, Z };
         }
 
-        // --- 平面図描画 ---
         function drawPlot() {
             ctxPlot.clearRect(0, 0, plotCanvas.width, plotCanvas.height);
             
@@ -311,8 +304,8 @@
             trees = [];
             currentLeftClick = null;
             plotCenterPx = null; 
-            FOCAL_LENGTH_35MM = 24.0; // 焦点距離もリセット
-            exifDisplay.innerText = "焦点距離: 未取得 (デフォルト24mmを使用)";
+            FOCAL_LENGTH_35MM = 24.0; 
+            exifDisplay.innerText = "焦点距離: 未取得 (デフォルト24mmで計算)";
             exifDisplay.style.color = '#007BFF';
             
             leftImageInput.value = '';
@@ -326,7 +319,6 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         }
         
-        // PWAのサービスワーカー登録スクリプト
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./service-worker.js')
