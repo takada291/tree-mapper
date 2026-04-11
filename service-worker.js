@@ -3,9 +3,6 @@ const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
-  // 使用する写真のファイル名をここに追加
-  './IMG_5457.jpg',
-  './IMG_5458.jpg',
   './icon-192.png',
   './icon-512.png'
 ];
