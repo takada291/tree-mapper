@@ -8,10 +8,11 @@
     <style>
         body { font-family: sans-serif; margin: 0; padding: 10px; background-color: #f0f0f0; text-align: center; }
         .container { display: flex; flex-direction: column; align-items: center; gap: 15px; }
-        .canvas-wrapper { background: #fff; padding: 5px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: 100%; max-width: 500px; box-sizing: border-box; }
-        canvas { width: 100%; height: auto; display: block; cursor: crosshair; }
+        .canvas-wrapper { background: #fff; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: 100%; max-width: 500px; box-sizing: border-box; }
+        canvas { width: 100%; height: auto; display: block; cursor: crosshair; border: 1px solid #eee; background-color: #fafafa; }
         #plotCanvas { background-color: #fff; border: 1px solid #ccc; max-width: 400px; margin: 0 auto; }
-        .instruction { font-size: 0.9em; color: #333; margin-bottom: 5px; text-align: left; font-weight: bold; }
+        .instruction { font-size: 0.9em; color: #333; margin-bottom: 8px; text-align: left; font-weight: bold; }
+        .file-input { margin-bottom: 10px; width: 100%; }
         button { padding: 12px 24px; font-size: 16px; margin-top: 15px; border-radius: 8px; border: none; background-color: #007BFF; color: white; width: 100%; max-width: 400px; }
     </style>
 </head>
@@ -21,12 +22,14 @@
     
     <div class="container">
         <div class="canvas-wrapper">
-            <div class="instruction">① 1枚目：立木をタップ</div>
+            <div class="instruction">① 1枚目：写真を撮影・選択して立木をタップ</div>
+            <input type="file" id="leftImageInput" class="file-input" accept="image/*">
             <canvas id="leftCanvas" width="800" height="600"></canvas>
         </div>
 
         <div class="canvas-wrapper">
-            <div class="instruction">② 2枚目：同じ立木をタップ</div>
+            <div class="instruction">② 2枚目：写真を撮影・選択して同じ立木をタップ</div>
+            <input type="file" id="rightImageInput" class="file-input" accept="image/*">
             <canvas id="rightCanvas" width="800" height="600"></canvas>
         </div>
 
@@ -47,33 +50,58 @@
         const COLORS = ['#FF0000', '#00FFFF', '#FF00FF', '#FFFF00', '#00FF00', '#FFA500', '#0000FF', '#8A2BE2', '#FF1493', '#00FA9A'];
 
         // 状態管理
-        let trees = []; // 立木データ
-        let currentLeftClick = null; // 1枚目のタップ位置
-        let plotCenterPx = null; // 平面図のプロット円中心（ピクセル座標）★変更
+        let trees = []; 
+        let currentLeftClick = null; 
+        let plotCenterPx = null; 
 
-        // キャンバス要素とコンテキスト
+        // 要素の取得
         const leftCanvas = document.getElementById('leftCanvas');
         const rightCanvas = document.getElementById('rightCanvas');
         const plotCanvas = document.getElementById('plotCanvas');
         const ctxLeft = leftCanvas.getContext('2d');
         const ctxRight = rightCanvas.getContext('2d');
         const ctxPlot = plotCanvas.getContext('2d');
+        
+        const leftImageInput = document.getElementById('leftImageInput');
+        const rightImageInput = document.getElementById('rightImageInput');
 
         // 画像オブジェクト
         const imgLeft = new Image();
         const imgRight = new Image();
-        
-        // ★修正：横長の写真を想定
-        imgLeft.src = 'IMG_5457.jpg'; 
-        imgRight.src = 'IMG_5458.jpg';
 
+        // 描画トリガー
         imgLeft.onload = renderLeft;
         imgRight.onload = renderRight;
+
+        // ★新機能：ファイル選択/カメラ撮影時の画像読み込み処理
+        leftImageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    imgLeft.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        rightImageInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    imgRight.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
 
         // 描画関数
         function renderLeft() {
             ctxLeft.clearRect(0, 0, leftCanvas.width, leftCanvas.height);
-            ctxLeft.drawImage(imgLeft, 0, 0, leftCanvas.width, leftCanvas.height);
+            if (imgLeft.src) {
+                ctxLeft.drawImage(imgLeft, 0, 0, leftCanvas.width, leftCanvas.height);
+            }
             trees.forEach(tree => drawPoint(ctxLeft, tree.leftClick, tree.color));
             if (currentLeftClick) {
                 const nextColor = COLORS[trees.length % COLORS.length];
@@ -83,7 +111,9 @@
 
         function renderRight() {
             ctxRight.clearRect(0, 0, rightCanvas.width, rightCanvas.height);
-            ctxRight.drawImage(imgRight, 0, 0, rightCanvas.width, rightCanvas.height);
+            if (imgRight.src) {
+                ctxRight.drawImage(imgRight, 0, 0, rightCanvas.width, rightCanvas.height);
+            }
             trees.forEach(tree => drawPoint(ctxRight, tree.rightClick, tree.color));
         }
 
@@ -115,8 +145,12 @@
             };
         }
 
-        // イベントリスナー
+        // キャンバスタップのイベントリスナー
         leftCanvas.addEventListener('click', (e) => {
+            if (!imgLeft.src) {
+                alert("先に1枚目の写真を選択または撮影してください。");
+                return;
+            }
             if (trees.length >= COLORS.length) {
                 alert("プロットできる立木の上限（10本）に達しました。");
                 return;
@@ -127,6 +161,10 @@
         });
 
         rightCanvas.addEventListener('click', (e) => {
+            if (!imgRight.src) {
+                alert("先に2枚目の写真を選択または撮影してください。");
+                return;
+            }
             if (!currentLeftClick) {
                 alert("先に上の写真（1枚目）で立木をタップしてください。");
                 leftCanvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -153,16 +191,15 @@
             }
         });
 
-        // ★修正：平面図のタップイベント（ピクセル座標で保存）
+        // 平面図のタップイベント（ピクセル座標で保存）
         plotCanvas.addEventListener('click', (e) => {
-            // 既にタップされていたら、その位置をクリアする
             if (plotCenterPx) {
                 plotCenterPx = null;
             } else {
                 const clickPos = getClickPos(plotCanvas, e);
                 plotCenterPx = { x: clickPos.x, y: clickPos.y };
             }
-            drawPlot(); // 再描画
+            drawPlot(); 
         });
 
         // 三角測量計算
@@ -174,7 +211,6 @@
             const xl = x_left - cx;
             const xr = x_right - cx;
 
-            // ★エラー解消：絶対値（Math.abs）
             const disparity = Math.abs(xl - xr);
 
             if (disparity === 0) {
@@ -192,26 +228,21 @@
         function drawPlot() {
             ctxPlot.clearRect(0, 0, plotCanvas.width, plotCanvas.height);
             
-            // 縮尺の設定（1メートル = 12ピクセル）
             const scale = 12; 
             
-            // ★カメラ位置（撮影位置）を下に配置
             const originX = plotCanvas.width / 2;
-            const originZ = plotCanvas.height - 30; // 下から30pxの位置をカメラとする
+            const originZ = plotCanvas.height - 30; 
             
-            // ★タップされた場所にプロット円（5.64m）を描画（ピクセル座標で描画）
             if (plotCenterPx) {
-                // 半径5.64mの円
                 ctxPlot.beginPath();
                 ctxPlot.arc(plotCenterPx.x, plotCenterPx.y, 5.64 * scale, 0, Math.PI * 2);
-                ctxPlot.fillStyle = 'rgba(0, 255, 0, 0.15)'; // 薄い緑
+                ctxPlot.fillStyle = 'rgba(0, 255, 0, 0.15)'; 
                 ctxPlot.fill();
                 ctxPlot.strokeStyle = '#228B22';
-                ctxPlot.setLineDash([5, 5]); // 点線
+                ctxPlot.setLineDash([5, 5]); 
                 ctxPlot.stroke();
-                ctxPlot.setLineDash([]); // 点線リセット
+                ctxPlot.setLineDash([]); 
 
-                // 中心点
                 ctxPlot.beginPath();
                 ctxPlot.arc(plotCenterPx.x, plotCenterPx.y, 4, 0, Math.PI * 2);
                 ctxPlot.fillStyle = 'red';
@@ -221,16 +252,14 @@
                 ctxPlot.fillText("円中心", plotCenterPx.x + 8, plotCenterPx.y - 5);
             }
 
-            // カメラ位置（撮影位置）
             ctxPlot.beginPath();
             ctxPlot.arc(originX, originZ, 6, 0, Math.PI * 2);
             ctxPlot.fillStyle = '#333';
             ctxPlot.fill();
             ctxPlot.fillStyle = '#333';
             ctxPlot.font = "12px sans-serif";
-            ctxPlot.fillText("撮影位置", originX - 25, originZ + 20); // テキストを調整
+            ctxPlot.fillText("撮影位置", originX - 25, originZ + 20); 
 
-            // 立木をプロット
             trees.forEach((tree, index) => {
                 const plotX = originX + (tree.X * scale);
                 const plotZ = originZ - (tree.Z * scale);
@@ -243,7 +272,6 @@
                 ctxPlot.lineWidth = 1;
                 ctxPlot.stroke();
                 
-                // ★直線距離を計算
                 const distance = Math.sqrt(tree.X * tree.X + tree.Z * tree.Z);
                 
                 ctxPlot.fillStyle = '#333';
@@ -255,7 +283,14 @@
         function resetApp() {
             trees = [];
             currentLeftClick = null;
-            plotCenterPx = null; // リセット
+            plotCenterPx = null; 
+            
+            // ファイル選択のリセットと画像のクリア
+            leftImageInput.value = '';
+            rightImageInput.value = '';
+            imgLeft.src = '';
+            imgRight.src = '';
+
             renderLeft();
             renderRight();
             drawPlot();
