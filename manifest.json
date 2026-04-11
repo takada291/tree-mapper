@@ -1,6 +1,6 @@
 {
-  "short_name": "森図",
-  "name": "森図 - 森の立木位置プロット",
+  "short_name": "立木位置",
+  "name": "立木位置",
   "icons": [
     {
       "src": "icon-192.png",
