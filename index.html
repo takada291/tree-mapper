@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>森図 - 森の立木位置プロット</title>
+    <link rel="manifest" href="manifest.json">
+    <style>
+        body { font-family: sans-serif; margin: 0; padding: 10px; background-color: #f0f0f0; text-align: center; }
+        .container { display: flex; flex-direction: column; align-items: center; gap: 15px; }
+        .canvas-wrapper { background: #fff; padding: 5px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); width: 100%; max-width: 500px; box-sizing: border-box; }
+        canvas { width: 100%; height: auto; display: block; cursor: crosshair; }
+        #plotCanvas { background-color: #fff; border: 1px solid #ccc; max-width: 400px; margin: 0 auto; }
+        .instruction { font-size: 0.9em; color: #333; margin-bottom: 5px; text-align: left; font-weight: bold; }
+        button { padding: 12px 24px; font-size: 16px; margin-top: 15px; border-radius: 8px; border: none; background-color: #007BFF; color: white; width: 100%; max-width: 400px; }
+    </style>
+</head>
+<body>
+
+    <h3 style="margin-top: 0;">森図 - 立木位置プロット</h3>
+    
+    <div class="container">
+        <div class="canvas-wrapper">
+            <div class="instruction">① 1枚目：立木をタップ</div>
+            <canvas id="leftCanvas" width="800" height="600"></canvas>
+        </div>
+
+        <div class="canvas-wrapper">
+            <div class="instruction">② 2枚目：同じ立木をタップ</div>
+            <canvas id="rightCanvas" width="800" height="600"></canvas>
+        </div>
+
+        <div class="canvas-wrapper" style="padding-top: 15px;">
+            <div class="instruction" style="text-align: center;">平面図（タップで5.64m円を配置）</div>
+            <canvas id="plotCanvas" width="400" height="400"></canvas>
+        </div>
+    </div>
+
+    <button onclick="resetApp()">すべてリセット</button>
+
+    <script>
+        // 設定値
+        const BASE_LENGTH = 2.0; // 基線長（2mポール）
+        const FOCAL_LENGTH_35MM = 24.0; // 35mm換算焦点距離
+
+        // 色分け用カラーパレット
+        const COLORS = ['#FF0000', '#00FFFF', '#FF00FF', '#FFFF00', '#00FF00', '#FFA500', '#0000FF', '#8A2BE2', '#FF1493', '#00FA9A'];
+
+        // 状態管理
+        let trees = []; // 立木データ
+        let currentLeftClick = null; // 1枚目のタップ位置
+        let plotCenterPx = null; // 平面図のプロット円中心（ピクセル座標）★変更
+
+        // キャンバス要素とコンテキスト
+        const leftCanvas = document.getElementById('leftCanvas');
+        const rightCanvas = document.getElementById('rightCanvas');
+        const plotCanvas = document.getElementById('plotCanvas');
+        const ctxLeft = leftCanvas.getContext('2d');
+        const ctxRight = rightCanvas.getContext('2d');
+        const ctxPlot = plotCanvas.getContext('2d');
+
+        // 画像オブジェクト
+        const imgLeft = new Image();
+        const imgRight = new Image();
+        
+        // ★修正：横長の写真を想定
+        imgLeft.src = 'IMG_5457.jpg'; 
+        imgRight.src = 'IMG_5458.jpg';
+
+        imgLeft.onload = renderLeft;
+        imgRight.onload = renderRight;
+
+        // 描画関数
+        function renderLeft() {
+            ctxLeft.clearRect(0, 0, leftCanvas.width, leftCanvas.height);
+            ctxLeft.drawImage(imgLeft, 0, 0, leftCanvas.width, leftCanvas.height);
+            trees.forEach(tree => drawPoint(ctxLeft, tree.leftClick, tree.color));
+            if (currentLeftClick) {
+                const nextColor = COLORS[trees.length % COLORS.length];
+                drawPoint(ctxLeft, currentLeftClick, nextColor, true);
+            }
+        }
+
+        function renderRight() {
+            ctxRight.clearRect(0, 0, rightCanvas.width, rightCanvas.height);
+            ctxRight.drawImage(imgRight, 0, 0, rightCanvas.width, rightCanvas.height);
+            trees.forEach(tree => drawPoint(ctxRight, tree.rightClick, tree.color));
+        }
+
+        function drawPoint(ctx, point, color, isBlinking = false) {
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 8, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = '#FFFFFF';
+            ctx.stroke();
+
+            if (isBlinking) {
+                ctx.beginPath();
+                ctx.arc(point.x, point.y, 14, 0, Math.PI * 2);
+                ctx.strokeStyle = color;
+                ctx.stroke();
+            }
+        }
+
+        // クリック座標をキャンバス内部解像度に変換
+        function getClickPos(canvas, evt) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            return {
+                x: (evt.clientX - rect.left) * scaleX,
+                y: (evt.clientY - rect.top) * scaleY
+            };
+        }
+
+        // イベントリスナー
+        leftCanvas.addEventListener('click', (e) => {
+            if (trees.length >= COLORS.length) {
+                alert("プロットできる立木の上限（10本）に達しました。");
+                return;
+            }
+            currentLeftClick = getClickPos(leftCanvas, e);
+            renderLeft();
+            rightCanvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+
+        rightCanvas.addEventListener('click', (e) => {
+            if (!currentLeftClick) {
+                alert("先に上の写真（1枚目）で立木をタップしてください。");
+                leftCanvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                return;
+            }
+            const rightClick = getClickPos(rightCanvas, e);
+            const color = COLORS[trees.length % COLORS.length];
+            
+            const pos = calculatePosition(currentLeftClick.x, rightClick.x, leftCanvas.width, leftCanvas.height);
+            
+            if (pos) {
+                trees.push({
+                    leftClick: currentLeftClick,
+                    rightClick: rightClick,
+                    color: color,
+                    X: pos.X,
+                    Z: pos.Z
+                });
+                currentLeftClick = null; 
+                renderLeft();
+                renderRight();
+                drawPlot();
+                plotCanvas.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        });
+
+        // ★修正：平面図のタップイベント（ピクセル座標で保存）
+        plotCanvas.addEventListener('click', (e) => {
+            // 既にタップされていたら、その位置をクリアする
+            if (plotCenterPx) {
+                plotCenterPx = null;
+            } else {
+                const clickPos = getClickPos(plotCanvas, e);
+                plotCenterPx = { x: clickPos.x, y: clickPos.y };
+            }
+            drawPlot(); // 再描画
+        });
+
+        // 三角測量計算
+        function calculatePosition(x_left, x_right, canvasWidth, canvasHeight) {
+            const sensorWidth = (canvasWidth > canvasHeight) ? 36.0 : 24.0;
+            const f_px = (canvasWidth * FOCAL_LENGTH_35MM) / sensorWidth;
+
+            const cx = canvasWidth / 2.0;
+            const xl = x_left - cx;
+            const xr = x_right - cx;
+
+            // ★エラー解消：絶対値（Math.abs）
+            const disparity = Math.abs(xl - xr);
+
+            if (disparity === 0) {
+                alert("視差（ズレ）がありません。タップ位置が完全に一致しています。");
+                return null;
+            }
+
+            const Z = (BASE_LENGTH * f_px) / disparity;
+            const X = (xl * Z) / f_px;
+
+            return { X, Z };
+        }
+
+        // --- 平面図描画 ---
+        function drawPlot() {
+            ctxPlot.clearRect(0, 0, plotCanvas.width, plotCanvas.height);
+            
+            // 縮尺の設定（1メートル = 12ピクセル）
+            const scale = 12; 
+            
+            // ★カメラ位置（撮影位置）を下に配置
+            const originX = plotCanvas.width / 2;
+            const originZ = plotCanvas.height - 30; // 下から30pxの位置をカメラとする
+            
+            // ★タップされた場所にプロット円（5.64m）を描画（ピクセル座標で描画）
+            if (plotCenterPx) {
+                // 半径5.64mの円
+                ctxPlot.beginPath();
+                ctxPlot.arc(plotCenterPx.x, plotCenterPx.y, 5.64 * scale, 0, Math.PI * 2);
+                ctxPlot.fillStyle = 'rgba(0, 255, 0, 0.15)'; // 薄い緑
+                ctxPlot.fill();
+                ctxPlot.strokeStyle = '#228B22';
+                ctxPlot.setLineDash([5, 5]); // 点線
+                ctxPlot.stroke();
+                ctxPlot.setLineDash([]); // 点線リセット
+
+                // 中心点
+                ctxPlot.beginPath();
+                ctxPlot.arc(plotCenterPx.x, plotCenterPx.y, 4, 0, Math.PI * 2);
+                ctxPlot.fillStyle = 'red';
+                ctxPlot.fill();
+                ctxPlot.fillStyle = '#333';
+                ctxPlot.font = "10px sans-serif";
+                ctxPlot.fillText("円中心", plotCenterPx.x + 8, plotCenterPx.y - 5);
+            }
+
+            // カメラ位置（撮影位置）
+            ctxPlot.beginPath();
+            ctxPlot.arc(originX, originZ, 6, 0, Math.PI * 2);
+            ctxPlot.fillStyle = '#333';
+            ctxPlot.fill();
+            ctxPlot.fillStyle = '#333';
+            ctxPlot.font = "12px sans-serif";
+            ctxPlot.fillText("撮影位置", originX - 25, originZ + 20); // テキストを調整
+
+            // 立木をプロット
+            trees.forEach((tree, index) => {
+                const plotX = originX + (tree.X * scale);
+                const plotZ = originZ - (tree.Z * scale);
+
+                ctxPlot.beginPath();
+                ctxPlot.arc(plotX, plotZ, 6, 0, Math.PI * 2);
+                ctxPlot.fillStyle = tree.color;
+                ctxPlot.fill();
+                ctxPlot.strokeStyle = '#333';
+                ctxPlot.lineWidth = 1;
+                ctxPlot.stroke();
+                
+                // ★直線距離を計算
+                const distance = Math.sqrt(tree.X * tree.X + tree.Z * tree.Z);
+                
+                ctxPlot.fillStyle = '#333';
+                ctxPlot.font = "12px sans-serif";
+                ctxPlot.fillText(`${index + 1} (${distance.toFixed(1)}m)`, plotX + 10, plotZ + 4);
+            });
+        }
+
+        function resetApp() {
+            trees = [];
+            currentLeftClick = null;
+            plotCenterPx = null; // リセット
+            renderLeft();
+            renderRight();
+            drawPlot();
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        // PWAのサービスワーカー登録スクリプト
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./service-worker.js')
+                    .then(reg => console.log('森図 - サービスワーカー登録完了: ', reg))
+                    .catch(err => console.log('森図 - サービスワーカー登録エラー: ', err));
+            });
+        }
+        
+        drawPlot();
+    </script>
+</body>
+</html>
