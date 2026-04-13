@@ -25,14 +25,14 @@
     <div class="container">
         <div class="canvas-wrapper">
             <div class="instruction">① 1枚目：写真を撮影・選択して立木をタップ</div>
-            <input type="file" id="leftImageInput" class="file-input" accept="image/*">
+            <input type="file" id="leftImageInput" class="file-input" accept="image/*" capture="environment">
             <div id="exifDisplay" class="exif-info">焦点距離: 未取得 (デフォルト24mmで計算)</div>
             <canvas id="leftCanvas" width="800" height="600"></canvas>
         </div>
 
         <div class="canvas-wrapper">
             <div class="instruction">② 2枚目：写真を撮影・選択して同じ立木をタップ</div>
-            <input type="file" id="rightImageInput" class="file-input" accept="image/*">
+            <input type="file" id="rightImageInput" class="file-input" accept="image/*" capture="environment">
             <canvas id="rightCanvas" width="800" height="600"></canvas>
         </div>
 
@@ -71,33 +71,36 @@
         imgLeft.onload = renderLeft;
         imgRight.onload = renderRight;
 
+        // ★EXIF取得処理の改善
         leftImageInput.addEventListener('change', async (e) => {
             const file = e.target.files[0];
             if (file) {
                 try {
+                    // 全てのタグを一度読み込んでみる
                     const exifData = await exifr.parse(file);
                     
                     if (exifData) {
+                        // 一般的なタグ名を複数チェック
                         const focal35 = exifData.FocalLengthIn35mmFilm || exifData.FocalLengthIn35mmFormat;
                         
                         if (focal35) {
                             FOCAL_LENGTH_35MM = focal35;
                             exifDisplay.innerText = `焦点距離: ${FOCAL_LENGTH_35MM}mm (写真から自動取得)`;
-                            exifDisplay.style.color = '#28a745'; 
+                            exifDisplay.style.color = '#28a745'; // 緑
                         } else {
                             FOCAL_LENGTH_35MM = 24.0;
                             exifDisplay.innerText = `OSによりEXIFが削除されました (標準の24mmで計算)`;
-                            exifDisplay.style.color = '#ff9800'; 
+                            exifDisplay.style.color = '#ff9800'; // オレンジ
                         }
                     } else {
                         FOCAL_LENGTH_35MM = 24.0;
                         exifDisplay.innerText = `EXIF情報なし (標準の24mmで計算)`;
-                        exifDisplay.style.color = '#ff9800'; 
+                        exifDisplay.style.color = '#ff9800'; // オレンジ
                     }
                 } catch (error) {
                     FOCAL_LENGTH_35MM = 24.0;
                     exifDisplay.innerText = `EXIF読み取りエラー (標準の24mmで計算)`;
-                    exifDisplay.style.color = '#dc3545'; 
+                    exifDisplay.style.color = '#dc3545'; // 赤
                 }
 
                 const reader = new FileReader();
